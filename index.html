@@ -283,11 +283,22 @@
          */
 
         // ==========================================
+        // CACHE & SYNC STATE
+        // ==========================================
+        let cachedBacktest = null;
+        let lastBacktestTime = 0;
+        let binanceTimeOffset = 0; // Correção entre Navegador e Binance
+        const BACKTEST_INTERVAL_MS = 60 * 60 * 1000; // 1 Hora em milissegundos
+
+        // Função de Tratamento (evita quebrar formatação de nulos)
+        const safeNum = (val) => Number.isFinite(val) ? val : 0;
+
+        // ==========================================
         // 1. FUNÇÕES DE ATUALIZAÇÃO DE INTERFACE (DOM)
         // ==========================================
         function updateUI(data) {
             // Atualiza Topo
-            document.getElementById('ui-current-price').innerText = `$ ${data.price.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('ui-current-price').innerText = `$ ${safeNum(data.price).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
             document.getElementById('ui-last-update').innerText = new Date().toLocaleTimeString('pt-BR');
 
             // Atualiza Painel 1: Status
@@ -311,7 +322,7 @@
             else signalBox.classList.add('signal-wait');
             signalBox.innerText = data.signal.type;
 
-            document.getElementById('ui-score').innerText = `${data.signal.score}/100`;
+            document.getElementById('ui-score').innerText = `${safeNum(data.signal.score)}/100`;
             const classifEl = document.getElementById('ui-classification');
             classifEl.innerText = data.signal.classification;
             classifEl.className = 'score-value';
@@ -332,24 +343,27 @@
             // Atualiza Painel 4: Indicadores
             const ind = data.indicators;
             const indicatorsHtml = `
-                <div class="data-item"><div class="data-label">EMA 20</div><div class="data-value">${ind.ema20.toFixed(2)}</div></div>
-                <div class="data-item"><div class="data-label">EMA 50</div><div class="data-value">${ind.ema50.toFixed(2)}</div></div>
-                <div class="data-item"><div class="data-label">EMA 200</div><div class="data-value">${ind.ema200.toFixed(2)}</div></div>
-                <div class="data-item"><div class="data-label">RSI 14</div><div class="data-value ${ind.rsi > 70 ? 'text-red' : ind.rsi < 30 ? 'text-green' : ''}">${ind.rsi.toFixed(2)}</div></div>
-                <div class="data-item"><div class="data-label">MACD</div><div class="data-value">${ind.macd.macd.toFixed(2)}</div></div>
-                <div class="data-item"><div class="data-label">MACD Signal</div><div class="data-value">${ind.macd.signal.toFixed(2)}</div></div>
-                <div class="data-item"><div class="data-label">MACD Hist</div><div class="data-value ${ind.macd.hist > 0 ? 'text-green' : 'text-red'}">${ind.macd.hist.toFixed(2)}</div></div>
-                <div class="data-item"><div class="data-label">ATR 14</div><div class="data-value">${ind.atr.toFixed(2)}</div></div>
-                <div class="data-item"><div class="data-label">Volume Atual</div><div class="data-value">${ind.volume.current}</div></div>
-                <div class="data-item"><div class="data-label">Volume Médio</div><div class="data-value">${ind.volume.avg.toFixed(0)}</div></div>
+                <div class="data-item"><div class="data-label">EMA 20</div><div class="data-value">${safeNum(ind.ema20).toFixed(2)}</div></div>
+                <div class="data-item"><div class="data-label">EMA 50</div><div class="data-value">${safeNum(ind.ema50).toFixed(2)}</div></div>
+                <div class="data-item"><div class="data-label">EMA 200</div><div class="data-value">${safeNum(ind.ema200).toFixed(2)}</div></div>
+                <div class="data-item"><div class="data-label">RSI 14</div><div class="data-value ${safeNum(ind.rsi) > 70 ? 'text-red' : safeNum(ind.rsi) < 30 ? 'text-green' : ''}">${safeNum(ind.rsi).toFixed(2)}</div></div>
+                <div class="data-item"><div class="data-label">MACD</div><div class="data-value">${safeNum(ind.macd.macd).toFixed(2)}</div></div>
+                <div class="data-item"><div class="data-label">MACD Signal</div><div class="data-value">${safeNum(ind.macd.signal).toFixed(2)}</div></div>
+                <div class="data-item"><div class="data-label">MACD Hist</div><div class="data-value ${safeNum(ind.macd.hist) > 0 ? 'text-green' : 'text-red'}">${safeNum(ind.macd.hist).toFixed(2)}</div></div>
+                <div class="data-item"><div class="data-label">ATR 14</div><div class="data-value">${safeNum(ind.atr).toFixed(2)}</div></div>
+                <div class="data-item"><div class="data-label">Volume Atual</div><div class="data-value">${safeNum(ind.volume.current)}</div></div>
+                <div class="data-item"><div class="data-label">Volume Médio</div><div class="data-value">${safeNum(ind.volume.avg).toFixed(0)}</div></div>
             `;
             document.getElementById('ui-indicators-grid').innerHTML = indicatorsHtml;
 
-            // Atualiza Painel 5: Estrutura
+            // Atualiza Painel 5: Estrutura (Com validação avançada de cores)
+            const dir = String(data.structure.direction).toLowerCase();
+            const dirClass = dir === 'bullish' ? 'text-green' : (dir === 'bearish' ? 'text-red' : '');
+
             const structHtml = `
-                <div class="data-item"><div class="data-label">Resistência</div><div class="data-value text-red">${data.structure.resistance.toFixed(2)}</div></div>
-                <div class="data-item"><div class="data-label">Suporte</div><div class="data-value text-green">${data.structure.support.toFixed(2)}</div></div>
-                <div class="data-item"><div class="data-label">Direção</div><div class="data-value ${data.structure.direction === 'bullish' ? 'text-green' : 'text-red'}">${data.structure.direction}</div></div>
+                <div class="data-item"><div class="data-label">Resistência</div><div class="data-value text-red">${safeNum(data.structure.resistance).toFixed(2)}</div></div>
+                <div class="data-item"><div class="data-label">Suporte</div><div class="data-value text-green">${safeNum(data.structure.support).toFixed(2)}</div></div>
+                <div class="data-item"><div class="data-label">Direção</div><div class="data-value ${dirClass}">${data.structure.direction}</div></div>
                 <div class="data-item"><div class="data-label">Breakout</div><div class="data-value">${data.structure.breakout}</div></div>
             `;
             document.getElementById('ui-structure-grid').innerHTML = structHtml;
@@ -369,35 +383,55 @@
         // ==========================================
         // 2. ENGINE PRINCIPAL (Loop de Atualização)
         // ==========================================
+        
+        // Função de Sincronização de Tempo
+        async function syncBinanceTime() {
+            try {
+                const res = await fetch("https://api.binance.com/api/v3/time");
+                const data = await res.json();
+                binanceTimeOffset = data.serverTime - Date.now();
+            } catch (error) {
+                console.warn("Falha ao sincronizar tempo com Binance, usando horário local:", error);
+            }
+        }
+
         async function runAnalysis() {
             try {
-                // Função encapsulada com tratamento robusto para requisição da Binance
+                // Fetch com Fallback de API para contornar problemas de CORS/IP bloqueado
                 async function getKlines(symbol, interval, limit) {
-                    const response = await fetch(
-                        `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
-                    );
-
-                    if (!response.ok) {
-                        throw new Error(`Binance API Error: Status ${response.status}`);
+                    const endpoints = [
+                        `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`,
+                        `https://data-api.binance.vision/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+                    ];
+                    
+                    let lastError = null;
+                    
+                    for (const url of endpoints) {
+                        try {
+                            const response = await fetch(url);
+                            if (!response.ok) throw new Error(`Status ${response.status}`);
+                            
+                            const data = await response.json();
+                            return data.map(candle => ({
+                                openTime: candle[0],
+                                open: Number(candle[1]),
+                                high: Number(candle[2]),
+                                low: Number(candle[3]),
+                                close: Number(candle[4]),
+                                volume: Number(candle[5]),
+                                closeTime: candle[6]
+                            }));
+                        } catch (err) {
+                            lastError = err;
+                        }
                     }
-
-                    const data = await response.json();
-
-                    return data.map(candle => ({
-                        openTime: candle[0],
-                        open: Number(candle[1]),
-                        high: Number(candle[2]),
-                        low: Number(candle[3]),
-                        close: Number(candle[4]),
-                        volume: Number(candle[5]),
-                        closeTime: candle[6]
-                    }));
+                    throw new Error(`Binance API Klines Error: ${lastError.message}`);
                 }
 
-                // Obtém histórico da Binance
+                // 1. Obtém dados
                 const candles = await getKlines("BTCUSDT", "15m", 500);
 
-                // Cálculos via window.indicators (importado via tag de script)
+                // 2. Cálculos de Indicadores
                 const ema20 = indicators.calculateEMA(candles, 20);
                 const ema50 = indicators.calculateEMA(candles, 50);
                 const ema200 = indicators.calculateEMA(candles, 200);
@@ -406,21 +440,26 @@
                 const atr = indicators.calculateATR(candles);
                 const volumeAvg = indicators.calculateVolumeAverage(candles, 20);
 
-                // Estrutura via window.swingStructure
-                const structure = swingStructure.getMarketStructure(
-                    candles,
-                    volumeAvg[volumeAvg.length - 1]
-                );
-
                 const last = candles.length - 1;
 
-                // Avaliação de Score via window.scoreEngine
+                // 3. Validação Preventiva de Arrays
+                if (!ema20[last] || !ema50[last] || !ema200[last] || typeof rsi[last] === 'undefined') {
+                    throw new Error("Erro de cálculo: Indicadores não geraram valores para o último candle.");
+                }
+
+                // 4. Estrutura de Mercado
+                const structure = swingStructure.getMarketStructure(
+                    candles,
+                    volumeAvg[last]
+                );
+
+                // 5. Score Engine
                 const scoreResult = scoreEngine.calculateScore({
                     close: candles[last].close,
                     ema20: ema20[last],
                     ema50: ema50[last],
                     ema200: ema200[last],
-                    rsi: rsi[last],
+                    rsi: safeNum(rsi[last]),
                     macd: macd[last].macd,
                     macdSignal: macd[last].signal,
                     macdHist: macd[last].histogram,
@@ -431,7 +470,7 @@
                     resistance: structure.resistance?.price ?? candles[last].high
                 });
 
-                // Definição final de Sinal
+                // 6. Definição do Sinal
                 let signal = "AGUARDANDO";
                 if (scoreResult.score >= 80 && scoreResult.classification === "Excelente") {
                     signal = "COMPRA";
@@ -439,22 +478,26 @@
                     signal = "VENDA";
                 }
 
-                // Rodar Backtest local via window.backtest
-                const bt = backtest.runBacktest(candles);
+                // 7. Cache Backtest System (Roda só na inicialização ou a cada 1 hora)
+                const nowTime = Date.now();
+                if (!cachedBacktest || (nowTime - lastBacktestTime) > BACKTEST_INTERVAL_MS) {
+                    cachedBacktest = backtest.runBacktest(candles);
+                    lastBacktestTime = nowTime;
+                }
 
-                // Empacota o Payload para interface
+                // 8. Montagem do Payload Validado
                 const payload = {
                     price: candles[last].close,
 
                     modules: {
-                        api: true,
-                        ema: true,
-                        rsi: true,
-                        macd: true,
-                        atr: true,
-                        swing: true,
-                        score: true,
-                        backtest: true
+                        api: candles.length > 0,
+                        ema: Array.isArray(ema20) && ema20.length > 0,
+                        rsi: Array.isArray(rsi) && rsi.length > 0,
+                        macd: Array.isArray(macd) && macd.length > 0,
+                        atr: Array.isArray(atr) && atr.length > 0,
+                        swing: !!structure,
+                        score: !!scoreResult,
+                        backtest: !!cachedBacktest
                     },
 
                     checklist: [
@@ -464,7 +507,7 @@
                         },
                         {
                             label: "RSI entre 55 e 70",
-                            passed: rsi[last] >= 55 && rsi[last] <= 70
+                            passed: safeNum(rsi[last]) >= 55 && safeNum(rsi[last]) <= 70
                         },
                         {
                             label: "MACD Histograma > 0",
@@ -511,11 +554,11 @@
                     },
 
                     backtest: {
-                        winRate: bt.winRate.toFixed(1) + "%", // Trava a formatação bonita (ex: 68.5%)
-                        profitFactor: bt.profitFactor,
-                        netProfit: "$ " + bt.netProfit.toLocaleString("en-US", { minimumFractionDigits: 2 }), // Usa o toLocaleString
-                        trades: bt.totalTrades,
-                        maxDrawdown: bt.maxDrawdown + "%"
+                        winRate: safeNum(cachedBacktest.winRate).toFixed(1) + "%", 
+                        profitFactor: safeNum(cachedBacktest.profitFactor).toFixed(2),
+                        netProfit: "$ " + safeNum(cachedBacktest.netProfit).toLocaleString("en-US", { minimumFractionDigits: 2 }), 
+                        trades: cachedBacktest.totalTrades,
+                        maxDrawdown: safeNum(cachedBacktest.maxDrawdown).toFixed(2) + "%"
                     }
                 };
 
@@ -523,24 +566,24 @@
 
             } catch (error) {
                 console.error("Falha ao rodar análise do Dashboard:", error);
-                // Caso queira interagir de forma visual em erros graves (opcional)
                 document.getElementById('ui-module-status').innerHTML = `
                     <li class="status-item"><span class="status-error">Falha ao processar módulos</span></li>
-                    <li class="status-item"><span style="color:var(--text-muted); font-size:10px;">${error.message}</span></li>
+                    <li class="status-item"><span style="color:var(--text-muted); font-size:11px;">${error.message}</span></li>
                 `;
             }
         }
         
-
         // ==========================================
-        // 3. CRONÔMETRO DE CANDLE (15 minutos)
+        // 3. CRONÔMETRO DE CANDLE (Sincronizado)
         // ==========================================
         function updateTimer() {
-            const now = new Date();
+            // Aplica a compensação do offset da Binance
+            const now = new Date(Date.now() + binanceTimeOffset);
+            
             const minutes = now.getMinutes();
             const seconds = now.getSeconds();
             
-            // Calcula minutos restantes até o próximo fechamento divisível por 15 (0, 15, 30, 45)
+            // Calcula minutos restantes para múltiplos de 15m (0, 15, 30, 45)
             const minutesToNext = 15 - (minutes % 15) - 1;
             const secondsToNext = 59 - seconds;
 
@@ -554,15 +597,22 @@
         // 4. INICIALIZAÇÃO E LOOPS
         // ==========================================
         
-        // 1. Rodar imediatamente na abertura
-        runAnalysis();
-        updateTimer();
+        async function bootSystem() {
+            await syncBinanceTime();
+            runAnalysis();
+            updateTimer();
 
-        // 2. Loop de análise (1 vez por minuto - 60000ms)
-        setInterval(runAnalysis, 60000);
+            // Loop de análise (1 vez por minuto - 60000ms)
+            setInterval(runAnalysis, 60000);
 
-        // 3. Loop do cronômetro da interface (a cada 1 segundo)
-        setInterval(updateTimer, 1000);
+            // Loop do cronômetro da interface (a cada 1 segundo)
+            setInterval(updateTimer, 1000);
+            
+            // Re-sincroniza tempo com Binance a cada hora 
+            setInterval(syncBinanceTime, BACKTEST_INTERVAL_MS);
+        }
+
+        bootSystem();
 
     </script>
 </body>
