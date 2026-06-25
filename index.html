@@ -411,28 +411,184 @@
         // ==========================================
         
         async function runAnalysis() {
-            try {
-                // AQUI VOCÊ CONECTA SEUS ARQUIVOS JS
-                // 1. let candles = await api.getCandles('BTCUSDT', '15m');
-                // 2. let ind = indicators.calculate(candles);
-                // 3. let structure = swingStructure.analyze(candles);
-                // 4. let scoreData = scoreEngine.evaluate(ind, structure);
-                // 5. let btData = backtest.getStats();
-                
-                // Montar objeto de payload consolidado para a UI (Semelhante ao MOCK_DATA)
-                // updateUI(payloadConsolidado);
+    try {
 
-                // SIMULAÇÃO: Atualizando com o mock data e gerando pequenas variações visuais
-                MOCK_DATA.price += (Math.random() - 0.5) * 50; 
-                MOCK_DATA.indicators.rsi += (Math.random() - 0.5) * 2;
-                updateUI(MOCK_DATA);
-                
-                console.log("Análise do TTR atualizada com sucesso.");
+        const candles = await getKlines(
+            "BTCUSDT",
+            "15m",
+            500
+        );
 
-            } catch (error) {
-                console.error("Erro ao rodar análise:", error);
-                // Aqui você pode alterar MOCK_DATA.modules.api para false, etc, e chamar updateUI()
+        const ema20 = indicators.calculateEMA(candles, 20);
+        const ema50 = indicators.calculateEMA(candles, 50);
+        const ema200 = indicators.calculateEMA(candles, 200);
+
+        const rsi = indicators.calculateRSI(candles, 14);
+
+        const macd = indicators.calculateMACD(candles);
+
+        const atr = indicators.calculateATR(candles);
+
+        const volumeAvg =
+            indicators.calculateVolumeAverage(
+                candles,
+                20
+            );
+
+        const structure =
+            swingStructure.getMarketStructure(
+                candles,
+                volumeAvg[volumeAvg.length - 1]
+            );
+
+        const last = candles.length - 1;
+
+        const scoreResult =
+            calculateScore({
+                close: candles[last].close,
+
+                ema20: ema20[last],
+                ema50: ema50[last],
+                ema200: ema200[last],
+
+                rsi: rsi[last],
+
+                macd: macd[last].macd,
+                macdSignal: macd[last].signal,
+                macdHist: macd[last].histogram,
+
+                volume: candles[last].volume,
+                volumeAvg: volumeAvg[last],
+
+                atr: atr[last],
+
+                support:
+                    structure.support?.price ??
+                    candles[last].low,
+
+                resistance:
+                    structure.resistance?.price ??
+                    candles[last].high
+            });
+
+        let signal = "AGUARDANDO";
+
+        if (
+            scoreResult.score >= 80 &&
+            scoreResult.classification === "Excelente"
+        ) {
+            signal = "COMPRA";
+        }
+
+        const payload = {
+            price: candles[last].close,
+
+            modules: {
+                api: true,
+                ema: true,
+                rsi: true,
+                macd: true,
+                atr: true,
+                swing: true,
+                score: true,
+                backtest: true
+            },
+
+            checklist: [
+                {
+                    label: "EMA20 > EMA50 > EMA200",
+                    passed:
+                        ema20[last] >
+                        ema50[last] &&
+                        ema50[last] >
+                        ema200[last]
+                },
+                {
+                    label: "RSI entre 55 e 70",
+                    passed:
+                        rsi[last] >= 55 &&
+                        rsi[last] <= 70
+                },
+                {
+                    label: "MACD Histograma > 0",
+                    passed:
+                        macd[last].histogram > 0
+                },
+                {
+                    label: "Volume > Média",
+                    passed:
+                        candles[last].volume >
+                        volumeAvg[last]
+                },
+                {
+                    label: "Score >= 80",
+                    passed:
+                        scoreResult.score >= 80
+                }
+            ],
+
+            signal: {
+                type: signal,
+                score: scoreResult.score,
+                classification:
+                    scoreResult.classification
+            },
+
+            indicators: {
+                ema20: ema20[last],
+                ema50: ema50[last],
+                ema200: ema200[last],
+
+                rsi: rsi[last],
+
+                macd: {
+                    macd: macd[last].macd,
+                    signal: macd[last].signal,
+                    hist: macd[last].histogram
+                },
+
+                atr: atr[last],
+
+                volume: {
+                    current: candles[last].volume,
+                    avg: volumeAvg[last]
+                }
+            },
+
+            structure: {
+                support:
+                    structure.support?.price || 0,
+
+                resistance:
+                    structure.resistance?.price || 0,
+
+                breakout:
+                    structure.breakout?.breakout
+                        ? "SIM"
+                        : "NÃO",
+
+                direction:
+                    structure.breakout?.direction ||
+                    "Nenhum"
+            },
+
+            backtest: {
+                winRate: "--",
+                profitFactor: "--",
+                netProfit: "--",
+                trades: "--",
+                maxDrawdown: "--"
             }
+        };
+
+        updateUI(payload);
+
+    } catch (error) {
+
+        console.error(error);
+
+    }
+}
         }
 
         // ==========================================
@@ -463,7 +619,7 @@
         updateTimer();
 
         // Configurar loop de análise (a cada 60 segundos)
-        setInterval(runAnalysis, 60000);
+        setInterval(runAnalysis, 10000);
 
         // Configurar loop do cronômetro (a cada 1 segundo)
         setInterval(updateTimer, 1000);
