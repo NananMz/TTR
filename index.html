@@ -269,74 +269,22 @@
         </aside>
     </main>
 
+    <script src="api.js"></script>
     <script src="indicators.js"></script>
-<script src="swingStructure.js"></script>
-<script src="scoreEngine.js"></script>
-<script src="backtest.js"></script>
+    <script src="swingStructure.js"></script>
+    <script src="scoreEngine.js"></script>
+    <script src="backtest.js"></script>
 
     <script>
         /**
          * ========================================================
          * TTR - INTEGRAÇÃO DE MÓDULOS E CONTROLE DE UI
          * ========================================================
-         * Este script simula a engine principal.
-         * Quando integrar no seu projeto, importe os módulos aqui.
-         * * Exemplo para ES6 Modules (caso use type="module" no script):
-         * import { fetchCandles } from './api.js';
-         * import { calcIndicators } from './indicators.js';
-         * import { analyzeStructure } from './swingStructure.js';
-         * import { calcScore } from './scoreEngine.js';
-         * import { getBacktestStats } from './backtest.js';
          */
 
         // ==========================================
-        // 1. ESTADO SIMULADO (Substitua pela lógica real)
+        // 1. FUNÇÕES DE ATUALIZAÇÃO DE INTERFACE (DOM)
         // ==========================================
-        const MOCK_DATA = {
-            price: 64230.50,
-            modules: {
-    api: !!candles,
-    ema: !!ema20,
-    rsi: !!rsi,
-    macd: !!macd,
-    atr: !!atr,
-    swing: !!structure,
-    score: !!scoreResult,
-    backtest: !!bt
-},
-            checklist: [
-                { label: "EMA20 > EMA50 > EMA200", passed: true },
-                { label: "RSI entre 55 e 70", passed: true },
-                { label: "MACD Histograma > 0", passed: true },
-                { label: "Volume > Média (20)", passed: true },
-                { label: "Score TTR >= 80", passed: true }
-            ],
-            signal: {
-                type: "COMPRA", // "COMPRA", "VENDA" ou "AGUARDANDO"
-                score: 87,
-                classification: "Excelente"
-            },
-            indicators: {
-                ema20: 64100.20, ema50: 63850.10, ema200: 62500.00,
-                rsi: 62.4,
-                macd: { macd: 125.4, signal: 95.2, hist: 30.2 },
-                atr: 450.5,
-                volume: { current: 1540, avg: 1200 }
-            },
-            structure: {
-                support: 63500.00, resistance: 64500.00,
-                breakout: "Nenhum", direction: "Bullish"
-            },
-            backtest: {
-                winRate: "68.5%", profitFactor: "1.85", netProfit: "+$4,520",
-                trades: 124, maxDrawdown: "8.2%"
-            }
-        };
-
-        // ==========================================
-        // 2. FUNÇÕES DE ATUALIZAÇÃO DE INTERFACE (DOM)
-        // ==========================================
-
         function updateUI(data) {
             // Atualiza Topo
             document.getElementById('ui-current-price').innerText = `$ ${data.price.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
@@ -347,7 +295,7 @@
                 const names = { api: "API Binance", ema: "EMA", rsi: "RSI", macd: "MACD", atr: "ATR", swing: "Swing Structure", score: "Score Engine", backtest: "Backtest" };
                 return `
                     <li class="status-item">
-                        <span>${names[key]}</span>
+                        <span>${names[key] || key}</span>
                         <div class="status-dots"></div>
                         <span class="${isOk ? 'status-ok' : 'status-error'}">${isOk ? 'OK' : 'ERRO'}</span>
                     </li>
@@ -393,7 +341,7 @@
                 <div class="data-item"><div class="data-label">MACD Hist</div><div class="data-value ${ind.macd.hist > 0 ? 'text-green' : 'text-red'}">${ind.macd.hist.toFixed(2)}</div></div>
                 <div class="data-item"><div class="data-label">ATR 14</div><div class="data-value">${ind.atr.toFixed(2)}</div></div>
                 <div class="data-item"><div class="data-label">Volume Atual</div><div class="data-value">${ind.volume.current}</div></div>
-                <div class="data-item"><div class="data-label">Volume Médio</div><div class="data-value">${ind.volume.avg}</div></div>
+                <div class="data-item"><div class="data-label">Volume Médio</div><div class="data-value">${ind.volume.avg.toFixed(0)}</div></div>
             `;
             document.getElementById('ui-indicators-grid').innerHTML = indicatorsHtml;
 
@@ -401,7 +349,7 @@
             const structHtml = `
                 <div class="data-item"><div class="data-label">Resistência</div><div class="data-value text-red">${data.structure.resistance.toFixed(2)}</div></div>
                 <div class="data-item"><div class="data-label">Suporte</div><div class="data-value text-green">${data.structure.support.toFixed(2)}</div></div>
-                <div class="data-item"><div class="data-label">Direção</div><div class="data-value ${data.structure.direction === 'Bullish' ? 'text-green' : 'text-red'}">${data.structure.direction}</div></div>
+                <div class="data-item"><div class="data-label">Direção</div><div class="data-value ${data.structure.direction === 'bullish' ? 'text-green' : 'text-red'}">${data.structure.direction}</div></div>
                 <div class="data-item"><div class="data-label">Breakout</div><div class="data-value">${data.structure.breakout}</div></div>
             `;
             document.getElementById('ui-structure-grid').innerHTML = structHtml;
@@ -419,226 +367,174 @@
         }
 
         // ==========================================
-        // 3. ENGINE PRINCIPAL (Loop de Atualização)
+        // 2. ENGINE PRINCIPAL (Loop de Atualização)
         // ==========================================
-        
         async function runAnalysis() {
-    try {
+            try {
+                // Função encapsulada com tratamento robusto para requisição da Binance
+                async function getKlines(symbol, interval, limit) {
+                    const response = await fetch(
+                        `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+                    );
 
-            async function getKlines(symbol, interval, limit) {
+                    if (!response.ok) {
+                        throw new Error(`Binance API Error: Status ${response.status}`);
+                    }
 
-    const response = await fetch(
-        `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
-    );
+                    const data = await response.json();
 
-    const data = await response.json();
+                    return data.map(candle => ({
+                        openTime: candle[0],
+                        open: Number(candle[1]),
+                        high: Number(candle[2]),
+                        low: Number(candle[3]),
+                        close: Number(candle[4]),
+                        volume: Number(candle[5]),
+                        closeTime: candle[6]
+                    }));
+                }
 
-    return data.map(candle => ({
-        openTime: candle[0],
-        open: Number(candle[1]),
-        high: Number(candle[2]),
-        low: Number(candle[3]),
-        close: Number(candle[4]),
-        volume: Number(candle[5]),
-        closeTime: candle[6]
-    }));
-}
+                // Obtém histórico da Binance
+                const candles = await getKlines("BTCUSDT", "15m", 500);
 
-        const candles = await getKlines(
-    "BTCUSDT",
-    "15m",
-    500
-);
+                // Cálculos via window.indicators (importado via tag de script)
+                const ema20 = indicators.calculateEMA(candles, 20);
+                const ema50 = indicators.calculateEMA(candles, 50);
+                const ema200 = indicators.calculateEMA(candles, 200);
+                const rsi = indicators.calculateRSI(candles, 14);
+                const macd = indicators.calculateMACD(candles);
+                const atr = indicators.calculateATR(candles);
+                const volumeAvg = indicators.calculateVolumeAverage(candles, 20);
 
-const ema20 = indicators.calculateEMA(candles, 20);
-const ema50 = indicators.calculateEMA(candles, 50);
-const ema200 = indicators.calculateEMA(candles, 200);
+                // Estrutura via window.swingStructure
+                const structure = swingStructure.getMarketStructure(
+                    candles,
+                    volumeAvg[volumeAvg.length - 1]
+                );
 
-        const rsi = indicators.calculateRSI(candles, 14);
+                const last = candles.length - 1;
 
-        const macd = indicators.calculateMACD(candles);
+                // Avaliação de Score via window.scoreEngine
+                const scoreResult = scoreEngine.calculateScore({
+                    close: candles[last].close,
+                    ema20: ema20[last],
+                    ema50: ema50[last],
+                    ema200: ema200[last],
+                    rsi: rsi[last],
+                    macd: macd[last].macd,
+                    macdSignal: macd[last].signal,
+                    macdHist: macd[last].histogram,
+                    volume: candles[last].volume,
+                    volumeAvg: volumeAvg[last],
+                    atr: atr[last],
+                    support: structure.support?.price ?? candles[last].low,
+                    resistance: structure.resistance?.price ?? candles[last].high
+                });
 
-        const atr = indicators.calculateATR(candles);
+                // Definição final de Sinal
+                let signal = "AGUARDANDO";
+                if (scoreResult.score >= 80 && scoreResult.classification === "Excelente") {
+                    signal = "COMPRA";
+                } else if (scoreResult.score <= 30) {
+                    signal = "VENDA";
+                }
 
-        const volumeAvg =
-            indicators.calculateVolumeAverage(
-                candles,
-                20
-            );
+                // Rodar Backtest local via window.backtest
+                const bt = backtest.runBacktest(candles);
 
-        const structure =
-            swingStructure.getMarketStructure(
-                candles,
-                volumeAvg[volumeAvg.length - 1]
-            );
+                // Empacota o Payload para interface
+                const payload = {
+                    price: candles[last].close,
 
-        const last = candles.length - 1;
+                    modules: {
+                        api: true,
+                        ema: true,
+                        rsi: true,
+                        macd: true,
+                        atr: true,
+                        swing: true,
+                        score: true,
+                        backtest: true
+                    },
 
-        const scoreResult =
-    scoreEngine.calculateScore({
+                    checklist: [
+                        {
+                            label: "EMA20 > EMA50 > EMA200",
+                            passed: ema20[last] > ema50[last] && ema50[last] > ema200[last]
+                        },
+                        {
+                            label: "RSI entre 55 e 70",
+                            passed: rsi[last] >= 55 && rsi[last] <= 70
+                        },
+                        {
+                            label: "MACD Histograma > 0",
+                            passed: macd[last].histogram > 0
+                        },
+                        {
+                            label: "Volume > Média",
+                            passed: candles[last].volume > volumeAvg[last]
+                        },
+                        {
+                            label: "Score >= 80",
+                            passed: scoreResult.score >= 80
+                        }
+                    ],
 
-                close: candles[last].close,
+                    signal: {
+                        type: signal,
+                        score: scoreResult.score,
+                        classification: scoreResult.classification
+                    },
 
-                ema20: ema20[last],
-                ema50: ema50[last],
-                ema200: ema200[last],
+                    indicators: {
+                        ema20: ema20[last],
+                        ema50: ema50[last],
+                        ema200: ema200[last],
+                        rsi: rsi[last],
+                        macd: {
+                            macd: macd[last].macd,
+                            signal: macd[last].signal,
+                            hist: macd[last].histogram
+                        },
+                        atr: atr[last],
+                        volume: {
+                            current: candles[last].volume,
+                            avg: volumeAvg[last]
+                        }
+                    },
 
-                rsi: rsi[last],
+                    structure: {
+                        support: structure.support?.price || 0,
+                        resistance: structure.resistance?.price || 0,
+                        breakout: structure.breakout?.breakout ? "SIM" : "NÃO",
+                        direction: structure.breakout?.direction || "Nenhum"
+                    },
 
-                macd: macd[last].macd,
-                macdSignal: macd[last].signal,
-                macdHist: macd[last].histogram,
+                    backtest: {
+                        winRate: bt.winRate.toFixed(1) + "%", // Trava a formatação bonita (ex: 68.5%)
+                        profitFactor: bt.profitFactor,
+                        netProfit: "$ " + bt.netProfit.toLocaleString("en-US", { minimumFractionDigits: 2 }), // Usa o toLocaleString
+                        trades: bt.totalTrades,
+                        maxDrawdown: bt.maxDrawdown + "%"
+                    }
+                };
 
-                volume: candles[last].volume,
-                volumeAvg: volumeAvg[last],
+                updateUI(payload);
 
-                atr: atr[last],
-
-                support:
-                    structure.support?.price ??
-                    candles[last].low,
-
-                resistance:
-                    structure.resistance?.price ??
-                    candles[last].high
-            });
-
-        let signal = "AGUARDANDO";
-
-if (
-    scoreResult.score >= 80 &&
-    scoreResult.classification === "Excelente"
-) {
-
-    signal = "COMPRA";
-
-}
-else if (
-    scoreResult.score <= 30
-) {
-
-    signal = "VENDA";
-
-}
-
-        const bt = backtest.runBacktest(candles);
-
-        
-        const payload = {
-    price: candles[last].close,
-
-    modules: {
-        api: true,
-        ema: true,
-        rsi: true,
-        macd: true,
-        atr: true,
-        swing: true,
-        score: true,
-        backtest: true
-    },
-
-    checklist: [
-        {
-            label: "EMA20 > EMA50 > EMA200",
-            passed:
-                ema20[last] >
-                ema50[last] &&
-                ema50[last] >
-                ema200[last]
-        },
-        {
-            label: "RSI entre 55 e 70",
-            passed:
-                rsi[last] >= 55 &&
-                rsi[last] <= 70
-        },
-        {
-            label: "MACD Histograma > 0",
-            passed:
-                macd[last].histogram > 0
-        },
-        {
-            label: "Volume > Média",
-            passed:
-                candles[last].volume >
-                volumeAvg[last]
-        },
-        {
-            label: "Score >= 80",
-            passed:
-                scoreResult.score >= 80
+            } catch (error) {
+                console.error("Falha ao rodar análise do Dashboard:", error);
+                // Caso queira interagir de forma visual em erros graves (opcional)
+                document.getElementById('ui-module-status').innerHTML = `
+                    <li class="status-item"><span class="status-error">Falha ao processar módulos</span></li>
+                    <li class="status-item"><span style="color:var(--text-muted); font-size:10px;">${error.message}</span></li>
+                `;
+            }
         }
-    ],
-
-    signal: {
-        type: signal,
-        score: scoreResult.score,
-        classification:
-            scoreResult.classification
-    },
-
-    indicators: {
-        ema20: ema20[last],
-        ema50: ema50[last],
-        ema200: ema200[last],
-
-        rsi: rsi[last],
-
-        macd: {
-            macd: macd[last].macd,
-            signal: macd[last].signal,
-            hist: macd[last].histogram
-        },
-
-        atr: atr[last],
-
-        volume: {
-            current: candles[last].volume,
-            avg: volumeAvg[last]
-        }
-    },
-
-    structure: {
-        support:
-            structure.support?.price || 0,
-
-        resistance:
-            structure.resistance?.price || 0,
-
-        breakout:
-            structure.breakout?.breakout
-                ? "SIM"
-                : "NÃO",
-
-        direction:
-            structure.breakout?.direction ||
-            "Nenhum"
-    },
-
-    backtest: {
-        winRate: bt.winRate + "%",
-        profitFactor: bt.profitFactor,
-        netProfit: bt.netProfit.toFixed(2),
-        trades: bt.totalTrades,
-        maxDrawdown: bt.maxDrawdown + "%"
-    }
-};
-
-        updateUI(payload);
-
-    } catch (error) {
-
-        console.error(error);
-
-    }
-}
         
 
         // ==========================================
-        // 4. CRONÔMETRO DE CANDLE (15 minutos)
+        // 3. CRONÔMETRO DE CANDLE (15 minutos)
         // ==========================================
-        
         function updateTimer() {
             const now = new Date();
             const minutes = now.getMinutes();
@@ -655,17 +551,17 @@ else if (
         }
 
         // ==========================================
-        // 5. INICIALIZAÇÃO
+        // 4. INICIALIZAÇÃO E LOOPS
         // ==========================================
         
-        // Rodar imediatamente na abertura
+        // 1. Rodar imediatamente na abertura
         runAnalysis();
         updateTimer();
 
-        // Configurar loop de análise (a cada 60 segundos)
-        setInterval(runAnalysis, 15000);
+        // 2. Loop de análise (1 vez por minuto - 60000ms)
+        setInterval(runAnalysis, 60000);
 
-        // Configurar loop do cronômetro (a cada 1 segundo)
+        // 3. Loop do cronômetro da interface (a cada 1 segundo)
         setInterval(updateTimer, 1000);
 
     </script>
