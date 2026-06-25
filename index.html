@@ -269,6 +269,11 @@
         </aside>
     </main>
 
+    <script src="indicators.js"></script>
+<script src="swingStructure.js"></script>
+<script src="scoreEngine.js"></script>
+<script src="backtest.js"></script>
+
     <script>
         /**
          * ========================================================
@@ -290,8 +295,15 @@
         const MOCK_DATA = {
             price: 64230.50,
             modules: {
-                api: true, ema: true, rsi: true, macd: true, atr: true, swing: true, score: true, backtest: true
-            },
+    api: !!candles,
+    ema: !!ema20,
+    rsi: !!rsi,
+    macd: !!macd,
+    atr: !!atr,
+    swing: !!structure,
+    score: !!scoreResult,
+    backtest: !!bt
+},
             checklist: [
                 { label: "EMA20 > EMA50 > EMA200", passed: true },
                 { label: "RSI entre 55 e 70", passed: true },
@@ -413,15 +425,34 @@
         async function runAnalysis() {
     try {
 
-        const candles = await getKlines(
-            "BTCUSDT",
-            "15m",
-            500
-        );
+            async function getKlines(symbol, interval, limit) {
 
-        const ema20 = indicators.calculateEMA(candles, 20);
-        const ema50 = indicators.calculateEMA(candles, 50);
-        const ema200 = indicators.calculateEMA(candles, 200);
+    const response = await fetch(
+        `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`
+    );
+
+    const data = await response.json();
+
+    return data.map(candle => ({
+        openTime: candle[0],
+        open: Number(candle[1]),
+        high: Number(candle[2]),
+        low: Number(candle[3]),
+        close: Number(candle[4]),
+        volume: Number(candle[5]),
+        closeTime: candle[6]
+    }));
+}
+
+        const candles = await getKlines(
+    "BTCUSDT",
+    "15m",
+    500
+);
+
+const ema20 = indicators.calculateEMA(candles, 20);
+const ema50 = indicators.calculateEMA(candles, 50);
+const ema200 = indicators.calculateEMA(candles, 200);
 
         const rsi = indicators.calculateRSI(candles, 14);
 
@@ -444,7 +475,8 @@
         const last = candles.length - 1;
 
         const scoreResult =
-            calculateScore({
+    scoreEngine.calculateScore({
+
                 close: candles[last].close,
 
                 ema20: ema20[last],
@@ -473,113 +505,125 @@
 
         let signal = "AGUARDANDO";
 
-        if (
-            scoreResult.score >= 80 &&
-            scoreResult.classification === "Excelente"
-        ) {
-            signal = "COMPRA";
-        }
+if (
+    scoreResult.score >= 80 &&
+    scoreResult.classification === "Excelente"
+) {
 
+    signal = "COMPRA";
+
+}
+else if (
+    scoreResult.score <= 30
+) {
+
+    signal = "VENDA";
+
+}
+
+        const bt = backtest.runBacktest(candles);
+
+        
         const payload = {
-            price: candles[last].close,
+    price: candles[last].close,
 
-            modules: {
-                api: true,
-                ema: true,
-                rsi: true,
-                macd: true,
-                atr: true,
-                swing: true,
-                score: true,
-                backtest: true
-            },
+    modules: {
+        api: true,
+        ema: true,
+        rsi: true,
+        macd: true,
+        atr: true,
+        swing: true,
+        score: true,
+        backtest: true
+    },
 
-            checklist: [
-                {
-                    label: "EMA20 > EMA50 > EMA200",
-                    passed:
-                        ema20[last] >
-                        ema50[last] &&
-                        ema50[last] >
-                        ema200[last]
-                },
-                {
-                    label: "RSI entre 55 e 70",
-                    passed:
-                        rsi[last] >= 55 &&
-                        rsi[last] <= 70
-                },
-                {
-                    label: "MACD Histograma > 0",
-                    passed:
-                        macd[last].histogram > 0
-                },
-                {
-                    label: "Volume > Média",
-                    passed:
-                        candles[last].volume >
-                        volumeAvg[last]
-                },
-                {
-                    label: "Score >= 80",
-                    passed:
-                        scoreResult.score >= 80
-                }
-            ],
+    checklist: [
+        {
+            label: "EMA20 > EMA50 > EMA200",
+            passed:
+                ema20[last] >
+                ema50[last] &&
+                ema50[last] >
+                ema200[last]
+        },
+        {
+            label: "RSI entre 55 e 70",
+            passed:
+                rsi[last] >= 55 &&
+                rsi[last] <= 70
+        },
+        {
+            label: "MACD Histograma > 0",
+            passed:
+                macd[last].histogram > 0
+        },
+        {
+            label: "Volume > Média",
+            passed:
+                candles[last].volume >
+                volumeAvg[last]
+        },
+        {
+            label: "Score >= 80",
+            passed:
+                scoreResult.score >= 80
+        }
+    ],
 
-            signal: {
-                type: signal,
-                score: scoreResult.score,
-                classification:
-                    scoreResult.classification
-            },
+    signal: {
+        type: signal,
+        score: scoreResult.score,
+        classification:
+            scoreResult.classification
+    },
 
-            indicators: {
-                ema20: ema20[last],
-                ema50: ema50[last],
-                ema200: ema200[last],
+    indicators: {
+        ema20: ema20[last],
+        ema50: ema50[last],
+        ema200: ema200[last],
 
-                rsi: rsi[last],
+        rsi: rsi[last],
 
-                macd: {
-                    macd: macd[last].macd,
-                    signal: macd[last].signal,
-                    hist: macd[last].histogram
-                },
+        macd: {
+            macd: macd[last].macd,
+            signal: macd[last].signal,
+            hist: macd[last].histogram
+        },
 
-                atr: atr[last],
+        atr: atr[last],
 
-                volume: {
-                    current: candles[last].volume,
-                    avg: volumeAvg[last]
-                }
-            },
+        volume: {
+            current: candles[last].volume,
+            avg: volumeAvg[last]
+        }
+    },
 
-            structure: {
-                support:
-                    structure.support?.price || 0,
+    structure: {
+        support:
+            structure.support?.price || 0,
 
-                resistance:
-                    structure.resistance?.price || 0,
+        resistance:
+            structure.resistance?.price || 0,
 
-                breakout:
-                    structure.breakout?.breakout
-                        ? "SIM"
-                        : "NÃO",
+        breakout:
+            structure.breakout?.breakout
+                ? "SIM"
+                : "NÃO",
 
-                direction:
-                    structure.breakout?.direction ||
-                    "Nenhum"
-            },
+        direction:
+            structure.breakout?.direction ||
+            "Nenhum"
+    },
 
-            backtest: {
-                winRate: "--",
-                profitFactor: "--",
-                netProfit: "--",
-                trades: "--",
-                maxDrawdown: "--"
-            }
-        };
+    backtest: {
+        winRate: bt.winRate + "%",
+        profitFactor: bt.profitFactor,
+        netProfit: bt.netProfit.toFixed(2),
+        trades: bt.totalTrades,
+        maxDrawdown: bt.maxDrawdown + "%"
+    }
+};
 
         updateUI(payload);
 
@@ -619,7 +663,7 @@
         updateTimer();
 
         // Configurar loop de análise (a cada 60 segundos)
-        setInterval(runAnalysis, 10000);
+        setInterval(runAnalysis, 15000);
 
         // Configurar loop do cronômetro (a cada 1 segundo)
         setInterval(updateTimer, 1000);
