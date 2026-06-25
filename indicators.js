@@ -147,36 +147,43 @@ function calculateMACD(candles, fastPeriod = 12, slowPeriod = 26, signalPeriod =
  */
 function calculateATR(candles, period = 14) {
     const atrValues = new Array(candles.length).fill(null);
-    if (candles.length <= period) return atrValues;
+
+    if (candles.length < period) {
+        return atrValues;
+    }
 
     const trValues = new Array(candles.length).fill(0);
-    
-    // O primeiro True Range é apenas High - Low
+
+    // Primeiro True Range
     trValues[0] = Number(candles[0].high) - Number(candles[0].low);
 
+    // Demais True Ranges
     for (let i = 1; i < candles.length; i++) {
-        const h = Number(candles[i].high);
-        const l = Number(candles[i].low);
-        const pc = Number(candles[i - 1].close);
+        const high = Number(candles[i].high);
+        const low = Number(candles[i].low);
+        const prevClose = Number(candles[i - 1].close);
 
         trValues[i] = Math.max(
-            h - l,
-            Math.abs(h - pc),
-            Math.abs(l - pc)
+            high - low,
+            Math.abs(high - prevClose),
+            Math.abs(low - prevClose)
         );
     }
 
-    // Média inicial do True Range (SMA)
+    // ATR inicial (SMA dos primeiros TRs)
     let sum = 0;
-    for (let i = 1; i <= period; i++) {
+
+    for (let i = 0; i < period; i++) {
         sum += trValues[i];
     }
-    let currentAtr = sum / period;
-    atrValues[period] = currentAtr;
 
-    // Suavização do ATR
-    for (let i = period + 1; i < candles.length; i++) {
-        currentAtr = (currentAtr * (period - 1) + trValues[i]) / period;
+    let currentAtr = sum / period;
+
+    atrValues[period - 1] = currentAtr;
+
+    // Wilder Smoothing
+    for (let i = period; i < candles.length; i++) {
+        currentAtr = ((currentAtr * (period - 1)) + trValues[i]) / period;
         atrValues[i] = currentAtr;
     }
 
